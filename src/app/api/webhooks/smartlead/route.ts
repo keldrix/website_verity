@@ -8,13 +8,31 @@ type ParsedPayload =
   | null;
 
 const SLACK_MESSAGE_LIMIT = 3000;
+const SMARTLEAD_INBOX_URL = "https://app.smartlead.ai/app/master-inbox";
 
-function serializePayload(payload: ParsedPayload) {
-  if (typeof payload === "string") {
-    return payload;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getNestedString(value: unknown, paths: string[][]) {
+  for (const path of paths) {
+    let current: unknown = value;
+
+    for (const key of path) {
+      if (!isRecord(current) || !(key in current)) {
+        current = undefined;
+        break;
+      }
+
+      current = current[key];
+    }
+
+    if (typeof current === "string" && current.trim()) {
+      return current.trim();
+    }
   }
 
-  return JSON.stringify(payload, null, 2);
+  return undefined;
 }
 
 function truncateForSlack(message: string) {
@@ -23,6 +41,58 @@ function truncateForSlack(message: string) {
   }
 
   return `${message.slice(0, SLACK_MESSAGE_LIMIT)}\n...truncated`;
+}
+
+function formatSlackMessage(payload: ParsedPayload) {
+  const campaign = getNestedString(payload, [
+    ["campaign_name"],
+    ["campaign"],
+    ["campaign", "name"],
+  ]);
+  const leadName = getNestedString(payload, [
+    ["lead_name"],
+    ["name"],
+    ["lead", "name"],
+    ["lead", "full_name"],
+    ["full_name"],
+  ]);
+  const email = getNestedString(payload, [
+    ["email"],
+    ["lead_email"],
+    ["lead", "email"],
+  ]);
+  const company = getNestedString(payload, [
+    ["company"],
+    ["company_name"],
+    ["lead", "company"],
+    ["lead", "company_name"],
+  ]);
+  const replyText = getNestedString(payload, [
+    ["reply_message", "text"],
+    ["reply_message"],
+    ["message", "text"],
+    ["message"],
+    ["text"],
+    ["body"],
+  ]);
+
+  const lines = [
+    "🎉 Smartlead Reply",
+    "",
+    `Campaign: ${campaign ?? "Unknown"}`,
+    `Lead: ${leadName ?? "Unknown"}`,
+    `Email: ${email ?? "Unknown"}`,
+    `Company: ${company ?? "Unknown"}`,
+    "",
+    "Reply:",
+    replyText ?? "No reply text provided.",
+    "",
+    "",
+    "Open in Smartlead:",
+    SMARTLEAD_INBOX_URL,
+  ];
+
+  return truncateForSlack(lines.join("\n"));
 }
 
 async function parseWebhookPayload(request: Request): Promise<ParsedPayload> {
@@ -61,14 +131,13 @@ async function sendSlackNotification(payload: ParsedPayload) {
     return;
   }
 
-  const payloadPreview = truncateForSlack(serializePayload(payload));
   const response = await fetch(slackWebhookUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      text: `Smartlead webhook received\n\`\`\`${payloadPreview}\`\`\``,
+      text: formatSlackMessage(payload),
     }),
   });
 

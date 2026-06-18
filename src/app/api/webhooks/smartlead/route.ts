@@ -14,6 +14,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function getStringValue(value: unknown) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
 function getNestedString(value: unknown, paths: string[][]) {
   for (const path of paths) {
     let current: unknown = value;
@@ -27,12 +36,94 @@ function getNestedString(value: unknown, paths: string[][]) {
       current = current[key];
     }
 
-    if (typeof current === "string" && current.trim()) {
-      return current.trim();
+    const stringValue = getStringValue(current);
+    if (stringValue) {
+      return stringValue;
     }
   }
 
   return undefined;
+}
+
+function findFirstStringByKeys(
+  value: unknown,
+  keys: string[],
+  visited = new Set<unknown>(),
+) {
+  if (value === null || value === undefined || visited.has(value)) {
+    return undefined;
+  }
+
+  const directValue = getStringValue(value);
+  if (directValue && keys.length === 0) {
+    return directValue;
+  }
+
+  if (Array.isArray(value)) {
+    visited.add(value);
+
+    for (const item of value) {
+      const match = findFirstStringByKeys(item, keys, visited);
+      if (match) {
+        return match;
+      }
+    }
+
+    return undefined;
+  }
+
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  visited.add(value);
+
+  for (const key of keys) {
+    const directMatch = getStringValue(value[key]);
+    if (directMatch) {
+      return directMatch;
+    }
+  }
+
+  for (const nestedValue of Object.values(value)) {
+    const match = findFirstStringByKeys(nestedValue, keys, visited);
+    if (match) {
+      return match;
+    }
+  }
+
+  return undefined;
+}
+
+function getLeadName(payload: ParsedPayload) {
+  const explicitName = getNestedString(payload, [
+    ["lead_name"],
+    ["name"],
+    ["lead", "name"],
+    ["lead", "full_name"],
+    ["full_name"],
+  ]);
+
+  if (explicitName) {
+    return explicitName;
+  }
+
+  const firstName = findFirstStringByKeys(payload, ["first_name", "firstname"]);
+  const lastName = findFirstStringByKeys(payload, ["last_name", "lastname"]);
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+
+  if (fullName) {
+    return fullName;
+  }
+
+  return findFirstStringByKeys(payload, [
+    "lead_name",
+    "full_name",
+    "sender_name",
+    "from_name",
+    "contact_name",
+    "prospect_name",
+  ]);
 }
 
 function truncateForSlack(message: string) {
@@ -44,37 +135,66 @@ function truncateForSlack(message: string) {
 }
 
 function formatSlackMessage(payload: ParsedPayload) {
-  const campaign = getNestedString(payload, [
+  const campaign =
+    getNestedString(payload, [
     ["campaign_name"],
     ["campaign"],
     ["campaign", "name"],
-  ]);
-  const leadName = getNestedString(payload, [
-    ["lead_name"],
-    ["name"],
-    ["lead", "name"],
-    ["lead", "full_name"],
-    ["full_name"],
-  ]);
-  const email = getNestedString(payload, [
+  ]) ??
+    findFirstStringByKeys(payload, [
+      "campaign_name",
+      "campaign",
+      "campaign_title",
+      "campaign_label",
+    ]);
+  const leadName = getLeadName(payload);
+  const email =
+    getNestedString(payload, [
     ["email"],
     ["lead_email"],
     ["lead", "email"],
-  ]);
-  const company = getNestedString(payload, [
+  ]) ??
+    findFirstStringByKeys(payload, [
+      "email",
+      "lead_email",
+      "email_address",
+      "from_email",
+      "sender_email",
+      "contact_email",
+      "prospect_email",
+    ]);
+  const company =
+    getNestedString(payload, [
     ["company"],
     ["company_name"],
     ["lead", "company"],
     ["lead", "company_name"],
-  ]);
-  const replyText = getNestedString(payload, [
+  ]) ??
+    findFirstStringByKeys(payload, [
+      "company",
+      "company_name",
+      "organization",
+      "organization_name",
+      "account_name",
+      "business_name",
+    ]);
+  const replyText =
+    getNestedString(payload, [
     ["reply_message", "text"],
     ["reply_message"],
     ["message", "text"],
     ["message"],
     ["text"],
     ["body"],
-  ]);
+  ]) ??
+    findFirstStringByKeys(payload, [
+      "reply_message",
+      "message",
+      "text",
+      "body",
+      "reply_text",
+      "email_body",
+    ]);
 
   const lines = [
     "🎉 Smartlead Reply",

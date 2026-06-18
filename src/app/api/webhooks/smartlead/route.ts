@@ -14,7 +14,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function getStringValue(value: unknown) {
+function getStringValue(value: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -23,7 +23,10 @@ function getStringValue(value: unknown) {
   return trimmed || undefined;
 }
 
-function getNestedString(value: unknown, paths: string[][]) {
+function getNestedString(
+  value: unknown,
+  paths: string[][],
+): string | undefined {
   for (const path of paths) {
     let current: unknown = value;
 
@@ -49,7 +52,7 @@ function findFirstStringByKeys(
   value: unknown,
   keys: string[],
   visited = new Set<unknown>(),
-) {
+): string | undefined {
   if (value === null || value === undefined || visited.has(value)) {
     return undefined;
   }
@@ -95,7 +98,7 @@ function findFirstStringByKeys(
   return undefined;
 }
 
-function getLeadName(payload: ParsedPayload) {
+function getLeadName(payload: ParsedPayload): string | undefined {
   const explicitName = getNestedString(payload, [
     ["lead_name"],
     ["name"],
@@ -134,13 +137,13 @@ function truncateForSlack(message: string) {
   return `${message.slice(0, SLACK_MESSAGE_LIMIT)}\n...truncated`;
 }
 
-function formatSlackMessage(payload: ParsedPayload) {
+function formatSlackMessage(payload: ParsedPayload): string {
   const campaign =
     getNestedString(payload, [
-    ["campaign_name"],
-    ["campaign"],
-    ["campaign", "name"],
-  ]) ??
+      ["campaign_name"],
+      ["campaign"],
+      ["campaign", "name"],
+    ]) ??
     findFirstStringByKeys(payload, [
       "campaign_name",
       "campaign",
@@ -150,10 +153,10 @@ function formatSlackMessage(payload: ParsedPayload) {
   const leadName = getLeadName(payload);
   const email =
     getNestedString(payload, [
-    ["email"],
-    ["lead_email"],
-    ["lead", "email"],
-  ]) ??
+      ["email"],
+      ["lead_email"],
+      ["lead", "email"],
+    ]) ??
     findFirstStringByKeys(payload, [
       "email",
       "lead_email",
@@ -165,11 +168,11 @@ function formatSlackMessage(payload: ParsedPayload) {
     ]);
   const company =
     getNestedString(payload, [
-    ["company"],
-    ["company_name"],
-    ["lead", "company"],
-    ["lead", "company_name"],
-  ]) ??
+      ["company"],
+      ["company_name"],
+      ["lead", "company"],
+      ["lead", "company_name"],
+    ]) ??
     findFirstStringByKeys(payload, [
       "company",
       "company_name",
@@ -180,13 +183,13 @@ function formatSlackMessage(payload: ParsedPayload) {
     ]);
   const replyText =
     getNestedString(payload, [
-    ["reply_message", "text"],
-    ["reply_message"],
-    ["message", "text"],
-    ["message"],
-    ["text"],
-    ["body"],
-  ]) ??
+      ["reply_message", "text"],
+      ["reply_message"],
+      ["message", "text"],
+      ["message"],
+      ["text"],
+      ["body"],
+    ]) ??
     findFirstStringByKeys(payload, [
       "reply_message",
       "message",
